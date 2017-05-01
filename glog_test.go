@@ -407,6 +407,16 @@ func TestLogBacktraceAt(t *testing.T) {
 	}
 }
 
+func TestSyslog(t *testing.T) {
+	setFlags()
+	defer logging.swap(logging.newBuffers())
+	logging.toSyslog = true
+	defer func() { logging.toSyslog = false }()
+	Info("Info syslog message")
+	Warning("Warn syslog message")
+	Error("Error syslog message")
+}
+
 func BenchmarkHeader(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		buf, _, _ := logging.header(infoLog, 0)

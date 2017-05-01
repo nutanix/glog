@@ -78,6 +78,7 @@ import (
 	"fmt"
 	"io"
 	stdLog "log"
+	"log/syslog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -397,6 +398,7 @@ type flushSyncWriter interface {
 
 func init() {
 	flag.BoolVar(&logging.toStderr, "logtostderr", false, "log to standard error instead of files")
+	flag.BoolVar(&logging.toSyslog, "logtosyslog", false, "log to syslog instead of files")
 	flag.BoolVar(&logging.alsoToStderr, "alsologtostderr", false, "log to standard error as well as files")
 	flag.Var(&logging.verbosity, "v", "log level for V logs")
 	flag.Var(&logging.stderrThreshold, "stderrthreshold", "logs at or above this threshold go to stderr")
@@ -421,10 +423,14 @@ type loggingT struct {
 	// does not let us avoid the =true, and that shorthand is necessary for
 	// compatibility. TODO: does this matter enough to fix? Seems unlikely.
 	toStderr     bool // The -logtostderr flag.
+	toSyslog     bool // The -logtosyslog flag.
 	alsoToStderr bool // The -alsologtostderr flag.
 
 	// Level flag. Handled atomically.
 	stderrThreshold severity // The -stderrthreshold flag.
+
+	// syslog logger
+	sysLogger *syslog.Writer
 
 	// freeList is a list of byte buffers, maintained under freeListMu.
 	freeList *buffer
@@ -548,7 +554,6 @@ func (l *loggingT) header(s severity, depth int) (*buffer, string, int) {
 
 // formatHeader formats a log header using the provided file name and line number.
 func (l *loggingT) formatHeader(s severity, file string, line int) *buffer {
-	now := timeNow()
 	if line < 0 {
 		line = 0 // not a real line number, but acceptable to someDigits
 	}
@@ -559,24 +564,31 @@ func (l *loggingT) formatHeader(s severity, file string, line int) *buffer {
 
 	// Avoid Fprintf, for speed. The format is so simple that we can do it quickly by hand.
 	// It's worth about 3X. Fprintf is hard.
-	_, month, day := now.Date()
-	hour, minute, second := now.Clock()
-	// Lmmdd hh:mm:ss.uuuuuu threadid file:line]
-	buf.tmp[0] = severityChar[s]
-	buf.twoDigits(1, int(month))
-	buf.twoDigits(3, day)
-	buf.tmp[5] = ' '
-	buf.twoDigits(6, hour)
-	buf.tmp[8] = ':'
-	buf.twoDigits(9, minute)
-	buf.tmp[11] = ':'
-	buf.twoDigits(12, second)
-	buf.tmp[14] = '.'
-	buf.nDigits(6, 15, now.Nanosecond()/1000, '0')
-	buf.tmp[21] = ' '
-	buf.nDigits(7, 22, pid, ' ') // TODO: should be TID
-	buf.tmp[29] = ' '
-	buf.Write(buf.tmp[:30])
+	if l.toSyslog {
+		buf.tmp[0] = severityChar[s]
+		buf.tmp[1] = ' '
+		buf.Write(buf.tmp[:2])
+	} else {
+		now := timeNow()
+		_, month, day := now.Date()
+		hour, minute, second := now.Clock()
+		// Lmmdd hh:mm:ss.uuuuuu threadid file:line]
+		buf.tmp[0] = severityChar[s]
+		buf.twoDigits(1, int(month))
+		buf.twoDigits(3, day)
+		buf.tmp[5] = ' '
+		buf.twoDigits(6, hour)
+		buf.tmp[8] = ':'
+		buf.twoDigits(9, minute)
+		buf.tmp[11] = ':'
+		buf.twoDigits(12, second)
+		buf.tmp[14] = '.'
+		buf.nDigits(6, 15, now.Nanosecond()/1000, '0')
+		buf.tmp[21] = ' '
+		buf.nDigits(7, 22, pid, ' ') // TODO: should be TID
+		buf.tmp[29] = ' '
+		buf.Write(buf.tmp[:30])
+	}
 	buf.WriteString(file)
 	buf.tmp[0] = ':'
 	n := buf.someDigits(1, line)
@@ -670,6 +682,15 @@ func (l *loggingT) printWithFileLine(s severity, file string, line int, alsoToSt
 // output writes the data to the log files and releases the buffer.
 func (l *loggingT) output(s severity, buf *buffer, file string, line int, alsoToStderr bool) {
 	l.mu.Lock()
+	if l.toSyslog && l.sysLogger == nil {
+		sysLogger, err := syslog.Dial("", "", syslog.LOG_DEBUG, "")
+		if err != nil {
+			l.mu.Unlock()
+			panic(err)
+		} else {
+			l.sysLogger = sysLogger
+		}
+	}
 	if l.traceLocation.isSet() {
 		if l.traceLocation.match(file, line) {
 			buf.Write(stacks(false))
@@ -681,6 +702,17 @@ func (l *loggingT) output(s severity, buf *buffer, file string, line int, alsoTo
 		os.Stderr.Write(data)
 	} else if l.toStderr {
 		os.Stderr.Write(data)
+	} else if l.toSyslog {
+		switch s {
+		case fatalLog:
+			l.sysLogger.Emerg(string(data))
+		case errorLog:
+			l.sysLogger.Err(string(data))
+		case warningLog:
+			l.sysLogger.Warning(string(data))
+		case infoLog:
+			l.sysLogger.Info(string(data))
+		}
 	} else {
 		if alsoToStderr || l.alsoToStderr || s >= l.stderrThreshold.get() {
 			os.Stderr.Write(data)
