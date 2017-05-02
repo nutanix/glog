@@ -683,7 +683,7 @@ func (l *loggingT) printWithFileLine(s severity, file string, line int, alsoToSt
 func (l *loggingT) output(s severity, buf *buffer, file string, line int, alsoToStderr bool) {
 	l.mu.Lock()
 	if l.toSyslog && l.sysLogger == nil {
-		sysLogger, err := syslog.Dial("", "", syslog.LOG_DEBUG, "")
+		sysLogger, err := syslog.Dial("", "", syslog.LOG_DEBUG, program)
 		if err != nil {
 			l.mu.Unlock()
 			panic(err)
