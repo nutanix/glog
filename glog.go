@@ -78,7 +78,6 @@ import (
 	"fmt"
 	"io"
 	stdLog "log"
-	"log/syslog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -160,6 +159,11 @@ func severityByName(s string) (severity, bool) {
 		}
 	}
 	return 0, false
+}
+
+// internal interface for optional syslog facility
+type sysLogger interface {
+	log(s severity, msg string)
 }
 
 // OutputStats tracks the number of output lines and bytes written.
@@ -430,7 +434,7 @@ type loggingT struct {
 	stderrThreshold severity // The -stderrthreshold flag.
 
 	// syslog logger
-	sysLogger *syslog.Writer
+	sysLogger sysLogger
 
 	// freeList is a list of byte buffers, maintained under freeListMu.
 	freeList *buffer
@@ -683,7 +687,7 @@ func (l *loggingT) printWithFileLine(s severity, file string, line int, alsoToSt
 func (l *loggingT) output(s severity, buf *buffer, file string, line int, alsoToStderr bool) {
 	l.mu.Lock()
 	if l.toSyslog && l.sysLogger == nil {
-		sysLogger, err := syslog.Dial("", "", syslog.LOG_DEBUG, program)
+		sysLogger, err := NewSysLogger(program)
 		if err != nil {
 			l.mu.Unlock()
 			panic(err)
@@ -703,16 +707,7 @@ func (l *loggingT) output(s severity, buf *buffer, file string, line int, alsoTo
 	} else if l.toStderr {
 		os.Stderr.Write(data)
 	} else if l.toSyslog {
-		switch s {
-		case fatalLog:
-			l.sysLogger.Emerg(string(data))
-		case errorLog:
-			l.sysLogger.Err(string(data))
-		case warningLog:
-			l.sysLogger.Warning(string(data))
-		case infoLog:
-			l.sysLogger.Info(string(data))
-		}
+		l.sysLogger.log(s, string(data))
 	} else {
 		if alsoToStderr || l.alsoToStderr || s >= l.stderrThreshold.get() {
 			os.Stderr.Write(data)
