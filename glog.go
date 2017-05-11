@@ -1077,6 +1077,14 @@ func (v Verbose) Infof(format string, args ...interface{}) {
 	}
 }
 
+// InfofWithFileLine is equivalent to the global Infof function, but uses
+// the given file and line number.
+func (v Verbose) InfofWithFileLine(file string, line int, format string, args ...interface{}) {
+	if v {
+		logging.printWithFileLine(infoLog, file, line, true, fmt.Sprintf(format, args...))
+	}
+}
+
 // Info logs to the INFO log.
 // Arguments are handled in the manner of fmt.Print; a newline is appended if missing.
 func Info(args ...interface{}) {
