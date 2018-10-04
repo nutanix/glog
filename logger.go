@@ -143,8 +143,8 @@ func (l *Logger) pfx(log string) string {
 // the -v and --vmodule flags; both are off by default. If the level in the call to
 // V is at least the value of -v, or of -vmodule for the source file containing the
 // call, the V call will log.
-func (l *Logger) V(level Level) *Logger {
+func (l Logger) V(level Level) *Logger {
 	l.Verbose = V(level)
-	return l
+	return &l
 }
 
