@@ -1,6 +1,7 @@
 package glog
 
 import (
+	"context"
 	"fmt"
 )
 
@@ -15,7 +16,7 @@ type Logger struct {
 func NewLogger() *Logger {
 	return &Logger{
 		loggingT: &logging,
-		Verbose:V(logging.verbosity),
+		Verbose:  V(logging.verbosity),
 	}
 }
 
@@ -23,7 +24,7 @@ func NewLogger() *Logger {
 func NewLoggerWithPrefix(format string, a ...interface{}) *Logger {
 	return &Logger{
 		loggingT: &logging,
-		Verbose: V(logging.verbosity),
+		Verbose:  V(logging.verbosity),
 		prefix:   fmt.Sprintf(format, a...),
 	}
 }
@@ -148,3 +149,27 @@ func (l *Logger) V(level Level) *Logger {
 	return l
 }
 
+// key is an unexported type for keys defined in this package.
+// This prevents collisions with keys defined in other packages.
+type key int
+
+// glogKey is the key for glog.Logger values in Contexts. It is
+// unexported; clients use glog.NewContext and glog.FromContext
+// instead of using this key directly.
+const glogKey key = iota + 1
+
+// NewContext returns a new Context that carries value u.
+func (l *Logger) NewContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, glogKey, l)
+}
+
+// FromContext returns the Logger value stored in ctx, if any.
+// Creates a new logger if not present
+func FromContext(ctx context.Context) (l *Logger) {
+	var ok bool
+	if l, ok = ctx.Value(glogKey).(*Logger); !ok {
+		l = NewLogger()
+	}
+
+	return l
+}
