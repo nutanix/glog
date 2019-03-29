@@ -2,6 +2,7 @@ package glog
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -14,16 +15,17 @@ func TestPrefix(t *testing.T) {
 			setFlags()
 			defer logging.swap(logging.newBuffers())
 
-			prefixedLogger := NewLoggerWithPrefix("examplePrefix")
+			firstPrefix := "examplePrefix"
+			prefixedLogger := NewLoggerWithPrefix(firstPrefix)
 			test.loggingFunc(prefixedLogger)
 			if !contains(test.severity, test.logCharacter, t) {
 				t.Errorf("%s has wrong character: %q", severityName[test.severity], contents(test.severity))
 			}
 			if !contains(test.severity, "hello", t) {
-				t.Errorf("%s failed", test.severity)
+				t.Errorf("%d failed", test.severity)
 			}
-			if !contains(test.severity, "examplePrefix", t) {
-				t.Errorf("%s failed", test.severity)
+			if !contains(test.severity, firstPrefix, t) {
+				t.Errorf("%d failed", test.severity)
 			}
 		})
 	}
@@ -37,11 +39,15 @@ func TestPrefixedLoggingWithContext(t *testing.T) {
 			setFlags()
 			defer logging.swap(logging.newBuffers())
 
-			prefixedLogger := NewLoggerWithPrefix("examplePrefix")
+			firstPrefix := "examplePrefix"
+			prefixedLogger := NewLoggerWithPrefix(firstPrefix)
 			ctx := prefixedLogger.NewContext(context.Background())
 			test.loggingFunc(FromContext(ctx))
 			if !contains(test.severity, test.logCharacter, t) {
 				t.Errorf("%s has wrong character: %q", severityName[test.severity], contents(test.severity))
+			}
+			if !contains(test.severity, firstPrefix, t) {
+				t.Errorf("%d failed", test.severity)
 			}
 		})
 	}
@@ -55,8 +61,11 @@ func TestMultiPrefix(t *testing.T) {
 			setFlags()
 			defer logging.swap(logging.newBuffers())
 
-			prefixedLogger := NewLoggerWithPrefix("examplePrefix")
-			prefixedLogger.AddPrefix("secondPrefix")
+			firstPrefix := "examplePrefix"
+			secondPrefix := "secondPrefix"
+			prefixedLogger := NewLoggerWithPrefix(firstPrefix)
+			prefixedLogger.AddPrefix(secondPrefix)
+
 			test.loggingFunc(prefixedLogger)
 			if !contains(test.severity, test.logCharacter, t) {
 				t.Errorf("%s has wrong character: %q", severityName[test.severity], contents(test.severity))
@@ -64,7 +73,44 @@ func TestMultiPrefix(t *testing.T) {
 			if !contains(test.severity, "hello", t) {
 				t.Errorf("%s failed", severityName[test.severity])
 			}
-			if !contains(test.severity, "examplePrefixsecondPrefix", t) {
+			if !contains(test.severity, firstPrefix, t) {
+				t.Errorf("%d failed", test.severity)
+			}
+			if !contains(test.severity, secondPrefix, t) {
+				t.Errorf("%d failed", test.severity)
+			}
+			if !contains(test.severity, firstPrefix+secondPrefix, t) {
+				t.Errorf("%s failed", severityName[test.severity])
+			}
+		})
+	}
+}
+
+func TestMultiPrefixWithPoppedPrefix(t *testing.T) {
+
+	for _, test := range loggerTests {
+		t.Run(test.name, func(t *testing.T) {
+
+			setFlags()
+			defer logging.swap(logging.newBuffers())
+
+			firstPrefix := "examplePrefix"
+			secondPrefix := "secondPrefix"
+			prefixedLogger := NewLoggerWithPrefix(firstPrefix)
+			prefixedLogger.AddPrefix(secondPrefix)
+
+			test.loggingFunc(prefixedLogger.PopPrefix())
+			if !contains(test.severity, "hello", t) {
+				t.Errorf("%s failed", severityName[test.severity])
+			}
+			if !contains(test.severity, firstPrefix, t) {
+				t.Errorf("%d failed", test.severity)
+			}
+			// second prefix should not be seen anymore since its been popped out
+			if contains(test.severity, secondPrefix, t) {
+				t.Errorf("%d failed", test.severity)
+			}
+			if contains(test.severity, firstPrefix+secondPrefix, t) {
 				t.Errorf("%s failed", severityName[test.severity])
 			}
 		})
@@ -77,9 +123,10 @@ func TestMultiPrefixWithLogLevel(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			setFlags()
 			defer logging.swap(logging.newBuffers())
-
-			prefixedLogger := NewLoggerWithPrefix("examplePrefix")
-			prefixedLogger.AddPrefix("secondPrefix")
+			firstPrefix := "examplePrefix"
+			secondPrefix := "secondPrefix"
+			prefixedLogger := NewLoggerWithPrefix(firstPrefix)
+			prefixedLogger.AddPrefix(secondPrefix)
 			prefixedLogger.verbosity.set(3)
 			test.loggingFunc(prefixedLogger)
 
@@ -89,7 +136,7 @@ func TestMultiPrefixWithLogLevel(t *testing.T) {
 			if contains(test.severity, "hello", t) {
 				t.Errorf("%s failed", severityName[test.severity])
 			}
-			if contains(test.severity, "examplePrefixsecondPrefix", t) {
+			if contains(test.severity, strings.Join([]string{firstPrefix, secondPrefix}, ""), t) {
 				t.Errorf("%s failed", severityName[test.severity])
 			}
 
@@ -102,7 +149,7 @@ func TestMultiPrefixWithLogLevel(t *testing.T) {
 			if !contains(test.severity, "hello", t) {
 				t.Errorf("%s failed", severityName[test.severity])
 			}
-			if !contains(test.severity, "examplePrefixsecondPrefix", t) {
+			if !contains(test.severity, strings.Join([]string{firstPrefix, secondPrefix}, ""), t) {
 				t.Errorf("%s failed", severityName[test.severity])
 			}
 		})

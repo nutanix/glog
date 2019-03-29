@@ -3,13 +3,14 @@ package glog
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 // Logger provides logging functionality with additional prefixing.
 type Logger struct {
 	*loggingT
 	Verbose
-	prefix string
+	prefixes []string
 }
 
 // NewLogger creates a Logger instance with empty prefix.
@@ -25,13 +26,31 @@ func NewLoggerWithPrefix(format string, a ...interface{}) *Logger {
 	return &Logger{
 		loggingT: &logging,
 		Verbose:  V(logging.verbosity),
-		prefix:   fmt.Sprintf(format, a...),
+		prefixes: []string{fmt.Sprintf(format, a...)},
+	}
+}
+
+// NewLoggerWithPrefix creates a new Logger from an existing logger
+// The supplied prefix is added to prefixes of the existing logger.
+func (l *Logger) NewLoggerWithPrefix(format string, a ...interface{}) *Logger {
+	return &Logger{
+		loggingT: &logging,
+		Verbose:  V(logging.verbosity),
+		prefixes: append(l.prefixes, fmt.Sprintf(format, a...)),
 	}
 }
 
 // AddPrefix appends existing logger with a specified prefix.
 func (l *Logger) AddPrefix(format string, a ...interface{}) *Logger {
-	l.prefix += fmt.Sprintf(format, a...)
+	l.prefixes = append(l.prefixes, fmt.Sprintf(format, a...))
+	return l
+}
+
+// PopPrefix drops the last prefix from the existing logger.
+func (l *Logger) PopPrefix() *Logger {
+	if len(l.prefixes) > 0 {
+		l.prefixes = l.prefixes[:len(l.prefixes)-1]
+	}
 	return l
 }
 
@@ -118,16 +137,15 @@ func (l *Logger) Fatalf(format string, args ...interface{}) {
 }
 
 func (l *Logger) extendWithPrefix(args []interface{}) []interface{} {
-	if l.prefix != "" {
-		args = append([]interface{}{
-			l.prefix,
-		}, args...)
+	if len(l.prefixes) > 0 {
+		prefix := strings.Join(l.prefixes, "")
+		args = append([]interface{}{prefix}, args...)
 	}
 	return args
 }
 
 func (l *Logger) pfx(log string) string {
-	return fmt.Sprintf("%v %v", l.prefix, log)
+	return fmt.Sprintf("%v %v", strings.Join(l.prefixes, ""), log)
 }
 
 // V reports whether verbosity at the call site is at least the requested level.
